@@ -24,15 +24,14 @@ class Pool {
         this.#queue.push(resolve);
       });
     }
-    let instance = null;
-    let free = false;
-    do {
-      instance = this.#instances[this.#current];
-      free = this.#free[this.#current];
-      this.#current++;
-      if (this.#current === this.#size) this.#current = 0;
-    } while (!instance || !free);
-    return instance;
+    let index = this.#current;
+    while (!this.#free[index]) {
+      if (++index === this.#size) index = 0;
+    }
+    this.#available--;
+    this.#free[index] = false;
+    this.#current = index;
+    return this.#instances[index];
   }
 
   add(instance) {
@@ -47,22 +46,20 @@ class Pool {
 
   async getInstance() {
     const instance = await this.next();
-    if (!instance) return null;
-    const index = this.#instances.indexOf(instance);
-    this.#free[index] = false;
-    this.#available--;
-    return instance;
+    return instance || null;
   }
 
   release(instance) {
     const index = this.#instances.indexOf(instance);
     if (index < 0) throw new Error('Pool: release unexpected instance');
     if (this.#free[index]) throw new Error('Pool: release not captured');
-    this.#free[index] = true;
-    this.#available++;
     if (this.#queue.length > 0) {
       const resolve = this.#queue.shift();
       if (resolve) setTimeout(resolve, 0, instance);
+    } else {
+      this.#free[index] = true;
+      this.#available++;
+      this.#current = index;
     }
   }
 }
@@ -90,6 +87,9 @@ const main = async () => {
 
   setTimeout(() => {
     pool.release(returning[1]);
+    pool
+      .getInstance()
+      .then((res) => console.log({ ['OOPS SOMETHING WRONG']: res }));
   }, 5000);
 
   for (let i = 0; i < 12; i++) {
